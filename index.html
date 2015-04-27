@@ -1,0 +1,297 @@
+<!doctype html public "-//w3c//dtd xhtml 1.0 transitional//en"
+	"http://www.w3.org/tr/xhtml1/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta charset="UTF-8" />
+	<title>Hop-n-Bop</title>
+	<link rel="icon" type="image/png" href="./favicon.png" />
+	<script type="text/javascript" src="js/phaser.min.js"></script>
+
+	<style>
+	body * {
+		margin:auto;
+		padding: 2em;
+	}
+	</style>
+</head>
+
+
+<body>
+<main>
+	<script type="text/javascript">
+	<!--
+
+	var juego = new Phaser.Game(720,480, Phaser.AUTO, 'juego', {
+		preload: preload,
+		create: create,
+		update: update,
+		render: render
+	});
+
+	function preload() {
+		juego.stage.backgroundColor = '#6080f8';
+		juego.load.tilemap('mapa','assets/mapas/nivel.json',null,Phaser.Tilemap.TILED_JSON);
+		juego.load.image('cielo','assets/imagenes/cielo.png');
+		juego.load.image('pasto','assets/imagenes/pasto.png');
+		juego.load.image('cajas','assets/imagenes/cajas.png');
+		juego.load.image('puas','assets/imagenes/puas.png');
+		juego.load.spritesheet('agua','assets/imagenes/agua.png',48,48);
+		juego.load.spritesheet('chupetin','assets/imagenes/chupetin.png',24,24);
+		juego.load.spritesheet('mosca','assets/imagenes/mosca.png',48,24);
+		juego.load.spritesheet('bandera','assets/imagenes/bandera.png',48,48);
+		juego.load.spritesheet('jugador','assets/imagenes/alien.png',48,61);
+		juego.load.audio('ftw',['assets/sonidos/ftw.mp3']);
+		juego.load.audio('ftl',['assets/sonidos/ftl.mp3']);
+		juego.load.audio('recolectar',['assets/sonidos/recolectar.wav']);
+		juego.load.audio('matar',['assets/sonidos/matar.wav']);
+	}
+
+	var mapa,
+		plataformas,
+		agua,
+		puas,
+		mosca,
+		chupetines,
+		bandera,
+		jugador,
+		sonidoRecolectar,
+		sonidoMatar,
+		sonidoGanar,
+		sonidoMorir,
+		controles,
+		barra,
+		timer = 150,
+		puntaje = 0,
+		gameOver = false,
+		celebro = false,
+		visualTimer,
+		visualPuntaje,
+		visualGameOver;
+
+	function create() {
+		juego.physics.startSystem(Phaser.Physics.ARCADE);		
+		crearEstatico();//plataformas, obstaculos, bandera
+		crearDinamico();//mosca,chupetines,jugador
+		
+		visualTimer = juego.add.text(0,0,'150',{fontSize: '32px', fill: '#000', align: 'center'});
+		visualPuntaje = juego.add.text(0,0,'0',{fontSize: '32px', fill: '#000', align: 'center'});
+		visualGameOver = juego.add.text(0,0,'',{fontSize: '32px', fill: '#000', align: 'center'});
+		sonidoGanar= juego.add.audio('ftw');
+		sonidoMorir = juego.add.audio('ftl');
+		sonidoRecolectar = juego.add.audio('recolectar');
+		sonidoMatar = juego.add.audio('matar');
+		controles = juego.input.keyboard.createCursorKeys();
+		barra = juego.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+	}
+
+	function update() {		
+		juego.physics.arcade.collide(jugador,plataformas);
+		juego.physics.arcade.collide(jugador,agua,morir,null,this);
+		juego.physics.arcade.collide(jugador,puas,morir,null,this);
+		juego.physics.arcade.collide(jugador,mosca,colisionMosca,null,this);
+		juego.physics.arcade.overlap(jugador,bandera,ganar,null,this);
+		juego.physics.arcade.overlap(jugador,chupetines,recolectar,null,this);
+		actualizarTexto();
+		actualizarMosca();
+		if (gameOver) {
+			if (barra.isDown) {
+				reiniciar();
+			}
+		}
+		else {
+			actualizarTimer();
+			jugador.body.velocity.x = 0;
+			if (controles.down.isDown && jugador.body.blocked.down) { //puede agacharse.
+				jugador.body.setSize(24,45,0,8);// el cuerpo de colisiones es distinto cuando se agacha.
+				jugador.animations.play('agachar');				
+			}
+			else {
+				jugador.body.setSize(24,60,0,0);// el cuerpo de colisiones cuando no esta agachado.
+				if (controles.left.isDown) {
+					jugador.scale.x = -1;//flip horizontal en las animaciones.
+					jugador.body.velocity.x = -175;
+					if (jugador.body.blocked.down) {
+						jugador.animations.play('caminar');
+					}
+				} else if (controles.right.isDown) {
+					jugador.scale.x = 1;//las animaciones originales.
+					jugador.body.velocity.x = 175;
+					if (jugador.body.blocked.down) {
+						jugador.animations.play('caminar');
+					}
+				} else if (jugador.body.blocked.down && 
+							jugador.body.velocity.x == 0 && jugador.body.velocity.y == 0) {
+					jugador.animations.play('ocioso');
+				} else if (!jugador.body.blocked.down) {
+					jugador.animations.play('saltar');
+				}
+				if (controles.up.isDown && jugador.body.blocked.down) {
+					jugador.body.velocity.y = -550;
+					jugador.animations.play('saltar');
+				}	
+			}		
+		}
+	}
+	
+	function crearEstatico() {
+		juego.add.image(0,0,'cielo');
+		mapa = juego.add.tilemap('mapa');
+		mapa.addTilesetImage('pasto');
+		mapa.addTilesetImage('cajas');
+		
+		plataformas = juego.add.group();
+		plataformas.enableBody = true;
+		plataformas = mapa.createLayer('plataformas');
+		plataformas.resizeWorld();
+		
+		agua = juego.add.group();
+		agua.enableBody = true;
+		mapa.createFromObjects('enemigos',4,'agua',0,true,false,agua);
+		agua.setAll('body.immovable',true);
+		agua.callAll('animations.add','animations','subibaja',[0,1,2,3,4,3,2,1],0,1,true);
+		agua.callAll('animations.play','animations','subibaja');
+		
+		puas = juego.add.group();
+		puas.enableBody = true;
+		mapa.createFromObjects('enemigos',7,'puas',0,true,false,puas);
+		puas.setAll('body.immovable',true);
+
+		bandera = juego.add.sprite(884,336,'bandera');
+		juego.physics.arcade.enable(bandera);
+		bandera.animations.add('quieta',[0],0,false);
+		bandera.animations.add('ondear',[1,2],10,true);
+
+		chupetines = juego.add.group();
+		chupetines.enableBody = true;
+		
+		mapa.setCollisionBetween(1,10);//permite colisionar con lo generado en el tilemap
+	}
+
+	function crearDinamico() {
+		mosca = juego.add.sprite(700,565,'mosca');
+		mosca.anchor.setTo(.3,.5);// para que quede menos brusca la transicion cuando invierto la animacion
+		juego.physics.arcade.enable(mosca);
+		mosca.body.setSize(30,20,-7,2);
+		mosca.animations.add('volar',[0,1],120,true);
+		mosca.animations.add('morir',[2],1,false);
+		mosca.animations.play('volar');
+		mosca.body.velocity.x = -300;
+		
+		mapa.createFromObjects('objetos',6,'chupetin',0,true,false,chupetines);
+		chupetines.callAll('animations.add','animations','rotar',[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],0,60,true);
+		chupetines.callAll('animations.play','animations','rotar');
+		
+		jugador = juego.add.sprite(96,640,'jugador');
+		jugador.animations.add('ocioso',[14,15],1,true);
+		jugador.animations.add('caminar',[0,1,2,3,4,5],10,true);
+		jugador.animations.add('agachar',[12],0,false);
+		jugador.animations.add('saltar',[13],1,false);
+		jugador.animations.add('morir',[6,6],1,true);
+		jugador.animations.add('celebrar',[9,10,11],5,true);
+		jugador.anchor.setTo(.5,.5);//para que sea menos brusca la animacion del flip
+		juego.physics.arcade.enable(jugador);
+		jugador.body.collideWorldBounds = true;
+		jugador.body.gravity.y = 1000;
+		jugador.body.acceleration.x = 5;
+		jugador.body.maxVelocity.x = 500;
+		jugador.body.maxVelocity.y = 1000;
+		juego.camera.follow(jugador);
+		jugador.animations.play('ocioso');
+	}
+
+	function actualizarMosca() { // hace un flip horizontal de la mosca y cambia la direccion en la que se mueve.
+		if (mosca.x < 575) {
+			mosca.body.velocity.x = 250;
+			mosca.scale.x = -1;
+		}
+		if (mosca.x > 925) {
+			mosca.body.velocity.x = -250;
+			mosca.scale.x = 1;
+		}
+	}
+	
+	function recolectar(jugador,chupetin) {
+		sonidoRecolectar.play('',0,1,false,false);
+		actualizarPuntaje(10);
+		chupetin.kill();
+	}
+
+	function colisionMosca(jugador,mosca) {
+		if (mosca.body.touching.up) {//si la esta pisando, muere la mosca.
+			sonidoMatar.play('',0,1,false,false);
+			jugador.body.velocity.y = -300;//rebota a lo mario
+			mosca.body.velocity.x = 0;
+			mosca.play('morir',5,false,true);
+			actualizarPuntaje(50);
+		} else {
+			morir(jugador);
+		}
+	}
+
+	function terminar() {
+		gameOver = true;
+		jugador.body.velocity.x = 0;
+		visualGameOver.setText('barra para reiniciar');
+	}
+
+	function morir(jugador) {
+		terminar();
+		sonidoMorir.play('',0,1,false,false);
+		jugador.animations.play('morir',1,false,true);
+	}
+	
+	function ganar(jugador) {
+		terminar();
+		if (!celebro) {
+			sonidoGanar.play('',0,1,false,false);
+			actualizarPuntaje(100);
+			celebro = true;
+		}
+		jugador.animations.play('celebrar',4);
+		bandera.animations.play('ondear');
+	}
+
+	function actualizarTimer() {
+		t = 150 - Math.floor(juego.time.totalElapsedSeconds());
+		timer = t > 0 ? t : 0;
+		visualTimer.setText(timer.toString());
+	}
+
+	function actualizarPuntaje(base) {
+		puntaje += timer > 0 ? base*timer : base;
+		visualPuntaje.setText(puntaje.toString());
+	}
+
+	// se mueven junto con la camara, manteniendo su posicion.
+	function actualizarTexto() {
+		visualTimer.x = juego.camera.x+50;
+		visualTimer.y = juego.camera.y+10;
+		
+		visualPuntaje.x = juego.camera.x+600;
+		visualPuntaje.y = juego.camera.y+10;
+		
+		visualGameOver.x = juego.camera.x+175;
+		visualGameOver.y = juego.camera.y+425;
+	}
+
+	function reiniciar() {
+		celebro = false;
+		gameOver = false;
+		puntaje = 0;
+		timer = 150;
+		juego.time.reset();
+		juego.state.start(juego.state.current);
+	}
+
+	// descomentar para ver los cuerpos en las colisiones.
+	function render() {
+		//juego.debug.body(jugador);
+		//juego.debug.body(mosca);
+	}
+		
+	-->
+	</script>
+	
+</main>
+</body>
+</html>
